@@ -1,0 +1,39 @@
+[settings]
+provider = "native"
+
+[relaychain]
+default_command = "bin/polkadot-stable2503/polkadot"
+default_args = ["-lruntime::bridge-grandpa=trace"]
+chain_spec_path = "specs/rococo-local-stable2503.json"
+
+[[relaychain.nodes]]
+name = "alice"
+validator = true
+rpc_port = 9901
+args = ["--blocks-pruning=archive", "--state-pruning=archive"]
+
+[[relaychain.nodes]]
+name = "bob"
+validator = true
+
+[[parachains]]
+id = 1000
+chain_spec_path = "specs/moonbase-local-rt4202.json"
+cumulus_based = true
+genesis_wasm_path = "runtimes/moonbase-runtime-4202.hex"
+
+[[parachains.collators]]
+name = "alith"
+command = "/Users/arturgontijo/workspace/MoonsongLabs/MBF/moonbeam/target/release/moonbeam"
+rpc_port = 8802
+args = [
+    "--no-hardware-benchmarks",
+    "--no-telemetry",
+    "-lruntime::bridge-grandpa=trace",
+    "--pool-type=fork-aware"
+]
+
+[types.Header]
+number = "u64"
+parent_hash = "Hash"
+post_state = "Hash"
