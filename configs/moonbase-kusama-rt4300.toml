@@ -2,9 +2,9 @@
 provider = "native"
 
 [relaychain]
-default_command = "bin/polkadot-stable2503/polkadot"
+default_command = "bin/polkadot-stable2506/polkadot"
 default_args = ["-lruntime::bridge-grandpa=trace"]
-chain_spec_path = "specs/rococo-local-stable2503.json"
+chain_spec_path = "specs/rococo-local-stable2506.json"
 
 [[relaychain.nodes]]
 name = "alice"

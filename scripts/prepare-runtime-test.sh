@@ -120,7 +120,10 @@ Optional:
                                polkadot binary version. Downloads the binary,
                                finds running validator processes, and restarts
                                each one with the new binary while preserving
-                               the chain state and database.
+                               the chain state and database. Validator and
+                               moonbeam collator stdout/stderr are appended to
+                               the same zombienet session *.log files as spawn;
+                               collators are restarted after relay RPC recovers.
   --kill                       Stop zombienet-spawned relay validators, the
                                parachain collator for --para (matched by chain
                                id + RPC port), and the zombienet spawn process.
@@ -629,6 +632,91 @@ upgrade_relay_runtime() {
 
 # ---------- rolling binary restart of relay validators ----------
 
+# Zombienet native: logs are …/<session>/<node>.log (e.g. …/zombie-…/alice.log).
+# --base-path may be …/<session>/<node> or …/<session>/<node>/data (substrate layout).
+zombienet_node_log_path() {
+    local base_path="$1"
+    [[ -z "$base_path" ]] && return 1
+    local normalized="${base_path%/}"
+    local zombie_dir node_name node_dir
+
+    if [[ "$normalized" == */data ]]; then
+        node_dir="$(dirname "$normalized")"
+        zombie_dir="$(dirname "$node_dir")"
+        node_name="$(basename "$node_dir")"
+    else
+        zombie_dir="$(dirname "$normalized")"
+        node_name="$(basename "$normalized")"
+    fi
+    printf '%s\n' "${zombie_dir}/${node_name}.log"
+}
+
+# After relay validators are swapped, restart moonbeam collator(s) for this network
+# with stdout/stderr appended to the same zombienet <name>.log files.
+restart_collators_same_logs() {
+    local para_rpc_port para_id
+    para_rpc_port="$(para_rpc_port_for "$PARA")"
+    para_id="$(para_id_for "$PARA")"
+
+    echo ""
+    echo "  Restarting parachain collator(s) (same command, append to zombienet logs)..."
+
+    local -a pids=()
+    local -a cmds=()
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local pid rest
+        pid="$(echo "$line" | awk '{print $1}')"
+        rest="$(echo "$line" | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')"
+        [[ -z "$pid" || -z "$rest" ]] && continue
+        pids+=("$pid")
+        cmds+=("$rest")
+    done < <(ps -ww -eo pid,args 2>/dev/null \
+        | grep -E -- "--rpc-port(=|[[:space:]]+)${para_rpc_port}([[:space:]]|$)" \
+        | grep -E -- "--parachain-id(=|[[:space:]]+)${para_id}([[:space:]]|$)" \
+        | grep -E '[mM]oonbeam' || true)
+
+    if [[ ${#pids[@]} -eq 0 ]]; then
+        echo "  (No moonbeam collator process matched rpc-port ${para_rpc_port} / para-id ${para_id}; skipped.)"
+        return 0
+    fi
+
+    local i
+    for i in "${!pids[@]}"; do
+        local pid="${pids[$i]}"
+        local cmd="${cmds[$i]}"
+
+        local base_path log_file
+        base_path="$(echo "$cmd" | sed -n 's/.*--base-path \([^ ]*\).*/\1/p')"
+        if [[ -z "$base_path" ]]; then
+            echo "  WARNING: Could not parse --base-path for collator PID ${pid}; skipping." >&2
+            continue
+        fi
+        log_file="$(zombienet_node_log_path "$base_path")" || continue
+
+        echo "  --- Restarting collator (PID ${pid}) → ${log_file} ---"
+
+        kill "$pid" 2>/dev/null || true
+        local waited=0
+        while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 10 ]]; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+            sleep 1
+        fi
+
+        echo "--- collator restarted at $(date -u) ---" >> "$log_file"
+        nohup bash -c "exec $cmd" >> "$log_file" 2>&1 &
+        echo "  Started collator (PID $!)"
+        if [[ $i -lt $((${#pids[@]} - 1)) ]]; then
+            sleep 3
+        fi
+    done
+}
+
 restart_relay_nodes() {
     local tag="$1"
     local relay_rpc_port
@@ -676,13 +764,15 @@ restart_relay_nodes() {
 
         local new_cmd="${cmd/$old_bin/$new_bin}"
 
-        local base_path
+        local base_path log_file
         base_path="$(echo "$cmd" | sed -n 's/.*--base-path \([^ ]*\).*/\1/p')"
-        local zombie_dir
-        zombie_dir="$(dirname "$(dirname "$base_path")")"
-        local log_file="${zombie_dir}/${name}.log"
+        if [[ -z "$base_path" ]]; then
+            echo "  ERROR: Could not parse --base-path from validator command line." >&2
+            exit 1
+        fi
+        log_file="$(zombienet_node_log_path "$base_path")"
 
-        echo "  --- Restarting ${name} (PID ${pid}) ---"
+        echo "  --- Restarting ${name} (PID ${pid}) → ${log_file} ---"
         echo "  Old: ${old_bin}"
         echo "  New: ${new_bin}"
 
@@ -760,6 +850,8 @@ except Exception:
     print('(could not parse)')
 " 2>/dev/null)"
     echo "  Runtime: ${version}"
+
+    restart_collators_same_logs
 }
 
 # ---------- stop zombienet (relay + parachain + supervisor) ----------

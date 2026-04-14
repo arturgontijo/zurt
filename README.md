@@ -110,7 +110,8 @@ For relay runtime upgrades (`upgrade-relay`):
 For rolling binary restarts (`restart-relay`):
 - Downloads the new polkadot binary version.
 - Finds running polkadot validator processes (by matching `--validator --insecure-validator-i-know-what-i-do`).
-- Stops each validator one at a time, replaces the binary in the command, and restarts it — preserving the chain database, ports, and arguments.
+- Stops each validator one at a time, replaces the binary in the command, and restarts it — preserving the chain database, ports, and arguments. New validator output is appended to the same zombienet `alice.log` / `bob.log` paths as the original spawn (derived from each process `--base-path`).
+- After relay RPC is healthy again, restarts the moonbeam collator for this `--para` / RPC port the same way so `alith.log` (etc.) keeps receiving logs.
 - This is needed when the PVF validation logic in the *client binary* is incompatible with a newer parachain runtime (e.g., `InvalidCoreIndex` errors from UMP signal format changes).
 
 ## Known polkadot-sdk Tags

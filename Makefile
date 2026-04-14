@@ -83,7 +83,7 @@ help:
 	@echo "  start               Prepare and spawn the network"
 	@echo "  upgrade             Upgrade parachain runtime on a running network"
 	@echo "  upgrade-relay       Upgrade relay chain runtime on a running network"
-	@echo "  restart-relay       Rolling restart relay validators with a new binary"
+	@echo "  restart-relay       Rolling restart relay validators (+ collator) with logs appended to zombienet *.log"
 	@echo "  kill                Stop zombienet relay, parachain, and supervisor processes"
 	@echo "  clean               Remove all generated files"
 	@echo "  help                Show this message"
